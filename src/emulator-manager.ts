@@ -26,30 +26,32 @@ export async function launchEmulator(
   try {
     console.log(`::group::Launch Emulator`);
     // create a new AVD if AVD directory does not already exist or forceAvdCreation is true
-    const avdPath = `${process.env.ANDROID_AVD_HOME}/${avdName}.avd`;
+    const emulatorPortNumber = await findOpenEmulatorPort()
+    const fullAvdName = `${avdName}-${emulatorPortNumber}`
+    const avdPath = `${process.env.ANDROID_AVD_HOME}/${fullAvdName}.avd`;
     if (!fs.existsSync(avdPath) || forceAvdCreation) {
       const profileOption = profile.trim() !== '' ? `--device '${profile}'` : '';
       const sdcardPathOrSizeOption = sdcardPathOrSize.trim() !== '' ? `--sdcard '${sdcardPathOrSize}'` : '';
       console.log(`Creating AVD.`);
       await exec.exec(
-        `sh -c \\"echo no | avdmanager create avd --force -n "${avdName}" --abi '${target}/${arch}' --package 'system-images;android-${apiLevel};${target};${arch}' ${profileOption} ${sdcardPathOrSizeOption}"`
+        `sh -c \\"echo no | avdmanager create avd --force -n "${fullAvdName}" --abi '${target}/${arch}' --package 'system-images;android-${apiLevel};${target};${arch}' ${profileOption} ${sdcardPathOrSizeOption}"`
       );
     }
 
     if (cores) {
-      await exec.exec(`sh -c \\"printf 'hw.cpu.ncore=${cores}\n' >> ${process.env.ANDROID_AVD_HOME}/"${avdName}".avd"/config.ini`);
+      await exec.exec(`sh -c \\"printf 'hw.cpu.ncore=${cores}\n' >> ${process.env.ANDROID_AVD_HOME}/"${fullAvdName}".avd"/config.ini`);
     }
 
     if (ramSize) {
-      await exec.exec(`sh -c \\"printf 'hw.ramSize=${ramSize}\n' >> ${process.env.ANDROID_AVD_HOME}/"${avdName}".avd"/config.ini`);
+      await exec.exec(`sh -c \\"printf 'hw.ramSize=${ramSize}\n' >> ${process.env.ANDROID_AVD_HOME}/"${fullAvdName}".avd"/config.ini`);
     }
 
     if (enableHardwareKeyboard) {
-      await exec.exec(`sh -c \\"printf 'hw.keyboard=yes\n' >> ${process.env.ANDROID_AVD_HOME}/"${avdName}".avd"/config.ini`);
+      await exec.exec(`sh -c \\"printf 'hw.keyboard=yes\n' >> ${process.env.ANDROID_AVD_HOME}/"${fullAvdName}".avd"/config.ini`);
     }
 
     if (diskSize) {
-      await exec.exec(`sh -c \\"printf 'disk.dataPartition.size=${diskSize}\n' >> ${process.env.ANDROID_AVD_HOME}/"${avdName}".avd"/config.ini`);
+      await exec.exec(`sh -c \\"printf 'disk.dataPartition.size=${diskSize}\n' >> ${process.env.ANDROID_AVD_HOME}/"${fullAvdName}".avd"/config.ini`);
     }
 
     //turn off hardware acceleration on Linux
@@ -58,10 +60,27 @@ export async function launchEmulator(
       emulatorOptions += ' -accel off';
     }
 
+    //add port number to emulator options
+    console.log(`Using port ${emulatorPortNumber} for emulator`)
+    emulatorOptions += ` -port ${emulatorPortNumber}`
+
+    process.env["ANDROID_SERIAL"] = `emulator-${emulatorPortNumber}`
+
+    let result = '';
+    await exec.exec("env", [], {
+      listeners: {
+        stdout: (data: Buffer) => {
+          result += data.toString();
+        }
+      }
+    });
+    console.log("CHECK ENVIRONMENT !!!!!!!!!!!")
+    console.log(result)
+
     // start emulator
     console.log('Starting emulator.');
 
-    await exec.exec(`sh -c \\"${process.env.ANDROID_SDK_ROOT}/emulator/emulator -avd "${avdName}" ${emulatorOptions} &"`, [], {
+    await exec.exec(`sh -c \\"${process.env.ANDROID_SDK_ROOT}/emulator/emulator -avd "${fullAvdName}" ${emulatorOptions} &"`, [], {
       listeners: {
         stderr: (data: Buffer) => {
           if (data.toString().includes('invalid command-line parameter')) {
@@ -104,6 +123,27 @@ export async function killEmulator(): Promise<void> {
   } finally {
     console.log(`::endgroup::`);
   }
+}
+
+/**
+ * Kills the running emulator on the default port.
+ */
+ async function findOpenEmulatorPort(): Promise<Number> {
+  for (let port = 5554; port <= 5570; port += 2) {
+    let result = '';
+    await exec.exec(`adb connect localhost:${port}`, [], {
+      listeners: {
+        stdout: (data: Buffer) => {
+          result += data.toString();
+        }
+      }
+    });
+    if (result.trim().includes("Connection refused")) {
+      return port
+    }
+  }
+
+  throw new Error("Could not find open port for emulator.")
 }
 
 /**
