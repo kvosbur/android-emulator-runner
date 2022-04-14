@@ -66,17 +66,6 @@ export async function launchEmulator(
 
     process.env["ANDROID_SERIAL"] = `emulator-${emulatorPortNumber}`
 
-    let result = '';
-    await exec.exec("env", [], {
-      listeners: {
-        stdout: (data: Buffer) => {
-          result += data.toString();
-        }
-      }
-    });
-    console.log("CHECK ENVIRONMENT !!!!!!!!!!!")
-    console.log(result)
-
     // start emulator
     console.log('Starting emulator.');
 
@@ -117,7 +106,7 @@ export async function launchEmulator(
 export async function killEmulator(): Promise<void> {
   try {
     console.log(`::group::Terminate Emulator`);
-    await exec.exec(`adb -s emulator-5554 emu kill`);
+    await exec.exec(`adb emu kill`);
   } catch (error) {
     console.log(error.message);
   } finally {
